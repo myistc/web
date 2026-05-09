@@ -76,3 +76,126 @@ export async function createFacultyMember(data: {
     return { success: false, error: error.message || "An unexpected error occurred during creation" };
   }
 }
+
+export async function deleteFacultyMember(id: string, imageUrl: string | null): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error: dbError } = await supabase
+      .from("faculty")
+      .delete()
+      .eq("id", id);
+
+    if (dbError) {
+      console.error("Error deleting faculty member from Supabase:", dbError.message);
+      return { success: false, error: dbError.message };
+    }
+
+    if (imageUrl) {
+      const fileName = imageUrl.split('/').pop();
+      if (fileName) {
+        const { error: storageError } = await supabase.storage
+          .from("faculty")
+          .remove([fileName]);
+
+        if (storageError) {
+          console.error("Error deleting image from Supabase Storage:", storageError.message);
+        }
+      }
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("Unexpected error occurred while deleting faculty member:", error);
+    return { success: false, error: error.message || "An unexpected error occurred during deletion" };
+  }
+}
+
+export async function updateFacultyMember(
+  id: string, 
+  data: { 
+    name?: string; 
+    designation?: string; 
+    department?: string; 
+    qualification?: string; 
+  }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabase
+      .from("faculty")
+      .update(data)
+      .eq("id", id);
+
+    if (error) {
+      console.error("Error updating faculty member:", error.message);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("Unexpected error occurred while updating faculty member:", error);
+    return { success: false, error: error.message || "An unexpected error occurred during update" };
+  }
+}
+
+export async function updateFacultyOrder(id: string, display_order: number): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabase
+      .from("faculty")
+      .update({ display_order })
+      .eq("id", id);
+
+    if (error) {
+      console.error("Error updating faculty display order:", error.message);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("Unexpected error occurred while updating faculty order:", error);
+    return { success: false, error: error.message || "An unexpected error occurred" };
+  }
+}
+
+export async function updateFacultyFeatured(id: string, featured: boolean): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabase
+      .from("faculty")
+      .update({ featured })
+      .eq("id", id);
+
+    if (error) {
+      console.error("Error updating faculty featured status:", error.message);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("Unexpected error occurred while updating featured status:", error);
+    return { success: false, error: error.message || "An unexpected error occurred" };
+  }
+}
+
+export async function getOrderedFaculty(sortMode: "manual" | "alphabetical"): Promise<Faculty[]> {
+  try {
+    let query = supabase.from("faculty").select("*");
+
+    if (sortMode === "manual") {
+      query = query
+        .order("display_order", { ascending: true })
+        .order("created_at", { ascending: false });
+    } else if (sortMode === "alphabetical") {
+      query = query.order("name", { ascending: true });
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error(`Error fetching ${sortMode} ordered faculty:`, error.message);
+      return [];
+    }
+
+    return data as Faculty[];
+  } catch (error) {
+    console.error("Unexpected error occurred while fetching ordered faculty:", error);
+    return [];
+  }
+}
