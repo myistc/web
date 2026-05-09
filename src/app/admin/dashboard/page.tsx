@@ -17,41 +17,61 @@ import {
 
 export default function AdminDashboardPage() {
   const router = useRouter();
+  // Start with loading true to block initial render until session is verified
   const [isLoading, setIsLoading] = useState(true);
   const [userEmail, setUserEmail] = useState<string>("");
 
   useEffect(() => {
-    const checkUser = async () => {
+    let isMounted = true;
+
+    const checkSession = async () => {
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error || !session) {
-          router.push("/admin/login");
+          // If no session, redirect to login.
+          // CRITICAL FIX: Do NOT set isLoading to false here.
+          // Keeping it true prevents the dashboard content from flickering before the router completes the redirect.
+          if (isMounted) {
+            router.replace("/admin/login");
+          }
           return;
         }
 
-        setUserEmail(session.user.email || "Admin");
+        // Session exists, safely reveal the dashboard
+        if (isMounted) {
+          setUserEmail(session.user.email || "Admin");
+          setIsLoading(false);
+        }
       } catch (error) {
-        console.error("Error checking auth status:", error);
-        router.push("/admin/login");
-      } finally {
-        setIsLoading(false);
+        console.error("Error verifying authentication:", error);
+        if (isMounted) {
+          router.replace("/admin/login");
+        }
       }
     };
 
-    checkUser();
+    checkSession();
+
+    // Cleanup function to prevent state updates if the component unmounts
+    return () => {
+      isMounted = false;
+    };
   }, [router]);
 
   const handleLogout = async () => {
     try {
+      setIsLoading(true); // Show loading spinner while signing out
       await supabase.auth.signOut();
-      router.push("/admin/login");
+      router.replace("/admin/login");
       router.refresh();
     } catch (error) {
       console.error("Error logging out:", error);
+      setIsLoading(false);
     }
   };
 
+  // Loading State Display
   if (isLoading) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center">
@@ -174,12 +194,12 @@ export default function AdminDashboardPage() {
               </div>
             </div>
             <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-              <p className="text-sm text-slate-500 font-medium mb-1">Last Login</p>
-              <p className="text-slate-900 font-bold">Today, Just now</p>
+              <p className="text-sm text-slate-500 font-medium mb-1">Session Check</p>
+              <p className="text-slate-900 font-bold">Secure Token Active</p>
             </div>
             <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
               <p className="text-sm text-slate-500 font-medium mb-1">Access Level</p>
-              <p className="text-slate-900 font-bold">Super Administrator</p>
+              <p className="text-slate-900 font-bold">Administrator</p>
             </div>
           </div>
         </div>
