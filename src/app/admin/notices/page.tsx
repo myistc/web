@@ -4,7 +4,14 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { uploadNoticePDF, createNotice } from "@/services/notices";
+import { 
+  uploadNoticePDF, 
+  createNotice, 
+  getNotices, 
+  deleteNotice, 
+  updateNotice 
+} from "@/services/notices";
+import { Notice } from "@/types/notice";
 import { 
   ArrowLeft, 
   Upload, 
@@ -13,49 +20,71 @@ import {
   CheckCircle2, 
   ShieldAlert,
   Calendar,
-  Type
+  Type,
+  Trash2,
+  Save,
+  ExternalLink,
+  Search,
+  XCircle
 } from "lucide-react";
 
 export default function AdminNoticesPage() {
   const router = useRouter();
   
-  // Auth State
+  // Auth & Data State
   const [isAuthChecking, setIsAuthChecking] = useState(true);
+  const [notices, setNotices] = useState<Notice[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   
-  // Form State
+  // Upload Form State
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [publishDate, setPublishDate] = useState(new Date().toISOString().split('T')[0]);
-  
-  // Submission State
   const [isUploading, setIsUploading] = useState(false);
+  
+  // Edit State
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDate, setEditDate] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  
+  // UI State
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
     let isMounted = true;
 
-    const checkSession = async () => {
+    const initialize = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
+        const { data: { session }, error: authError } = await supabase.auth.getSession();
         
-        if (error || !session) {
+        if (authError || !session) {
           if (isMounted) router.replace("/admin/login");
           return;
         }
 
-        if (isMounted) setIsAuthChecking(false);
+        if (isMounted) {
+          setIsAuthChecking(false);
+          await fetchNotices();
+        }
       } catch (error) {
-        console.error("Error verifying authentication:", error);
+        console.error("Initialization error:", error);
         if (isMounted) router.replace("/admin/login");
       }
     };
 
-    checkSession();
+    initialize();
 
-    return () => {
-      isMounted = false;
-    };
+    return () => { isMounted = false; };
   }, [router]);
+
+  const fetchNotices = async () => {
+    setIsLoading(true);
+    const data = await getNotices();
+    setNotices(data);
+    setIsLoading(false);
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -75,232 +104,281 @@ export default function AdminNoticesPage() {
     e.preventDefault();
     setMessage(null);
 
-    if (!file) {
-      setMessage({ type: 'error', text: 'Please select a PDF document to upload.' });
-      return;
-    }
-
-    if (!title.trim()) {
-      setMessage({ type: 'error', text: 'Please provide a title for the notice.' });
-      return;
-    }
-
-    if (!publishDate) {
-      setMessage({ type: 'error', text: 'Please select a publish date.' });
+    if (!file || !title.trim() || !publishDate) {
+      setMessage({ type: 'error', text: 'Please fill all fields and select a PDF.' });
       return;
     }
 
     setIsUploading(true);
-
     try {
-      // 1 & 2. Upload PDF to Supabase Storage and get URL
       const uploadResult = await uploadNoticePDF(file);
+      if (!uploadResult.success || !uploadResult.url) throw new Error(uploadResult.error);
 
-      if (!uploadResult.success || !uploadResult.url) {
-        throw new Error(uploadResult.error || "Failed to upload document to storage.");
-      }
-
-      // 3. Save notice to Database
       const dbResult = await createNotice({
         title: title.trim(),
         pdf_url: uploadResult.url,
         publish_date: publishDate,
       });
 
-      if (!dbResult.success) {
-        throw new Error(dbResult.error || "Failed to save notice details to the database.");
-      }
+      if (!dbResult.success) throw new Error(dbResult.error);
 
-      // Success
-      setMessage({ type: 'success', text: 'Notice successfully published to the notice board!' });
-      
-      // Reset form
-      setFile(null);
+      setMessage({ type: 'success', text: 'Notice published successfully!' });
       setTitle("");
-      setPublishDate(new Date().toISOString().split('T')[0]);
+      setFile(null);
+      await fetchNotices();
       const fileInput = document.getElementById('pdf-upload') as HTMLInputElement;
       if (fileInput) fileInput.value = '';
-
     } catch (error: any) {
-      setMessage({ type: 'error', text: error.message || 'An unexpected error occurred during publish.' });
+      setMessage({ type: 'error', text: error.message || 'Upload failed.' });
     } finally {
       setIsUploading(false);
     }
   };
 
-  // Loading State Display
+  const handleDelete = async (id: string, pdfUrl: string) => {
+    if (!window.confirm("Are you sure you want to delete this notice? This action is permanent.")) return;
+
+    try {
+      const result = await deleteNotice(id, pdfUrl);
+      if (result.success) {
+        setMessage({ type: 'success', text: 'Notice deleted successfully.' });
+        setNotices(prev => prev.filter(n => n.id !== id));
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.message || 'Deletion failed.' });
+    }
+  };
+
+  const startEditing = (notice: Notice) => {
+    setEditingId(notice.id);
+    setEditTitle(notice.title);
+    setEditDate(notice.publish_date);
+  };
+
+  const handleUpdate = async (id: string) => {
+    setIsSaving(true);
+    try {
+      const result = await updateNotice(id, { title: editTitle, publish_date: editDate });
+      if (result.success) {
+        setMessage({ type: 'success', text: 'Notice updated successfully.' });
+        setEditingId(null);
+        await fetchNotices();
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.message || 'Update failed.' });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const filteredNotices = notices.filter(n => 
+    n.title.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   if (isAuthChecking) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center">
-        <Loader2 className="w-10 h-10 text-primary animate-spin mb-4" />
-        <p className="text-slate-500 font-medium animate-pulse">Verifying secure session...</p>
+        <Loader2 className="w-10 h-10 text-emerald-600 animate-spin mb-4" />
+        <p className="text-slate-500 font-medium">Verifying Credentials...</p>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* Top Navigation Bar */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center h-16 gap-4">
-            <Link 
-              href="/admin/dashboard"
-              className="p-2 -ml-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors"
-              aria-label="Back to Dashboard"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Link>
-            <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-              <FileText className="w-5 h-5 text-blue-600" />
-            </div>
-            <h1 className="text-lg font-bold text-slate-900">Notice Management</h1>
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center h-16 gap-4">
+          <Link href="/admin/dashboard" className="p-2 -ml-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors">
+            <ArrowLeft className="w-5 h-5" />
+          </Link>
+          <div className="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center">
+            <FileText className="w-5 h-5 text-emerald-600" />
           </div>
+          <h1 className="text-lg font-bold text-slate-900">Academic Notices</h1>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 max-w-3xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-10">
+      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 grid grid-cols-1 lg:grid-cols-12 gap-8">
         
-        <div className="mb-8">
-          <h2 className="text-2xl md:text-3xl font-extrabold text-slate-900">
-            Publish New Notice
-          </h2>
-          <p className="text-slate-600 mt-2">
-            Upload official circulars, academic schedules, or general announcements.
-          </p>
-        </div>
-
-        {/* Message Alert */}
-        {message && (
-          <div className={`mb-6 p-4 rounded-xl flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-300 border ${
-            message.type === 'success' 
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-800' 
-              : 'bg-red-50 border-red-200 text-red-800'
-          }`}>
-            {message.type === 'success' ? (
-              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-            ) : (
-              <ShieldAlert className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-            )}
-            <p className="text-sm font-medium leading-relaxed">{message.text}</p>
-          </div>
-        )}
-
-        {/* Upload Form Card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          <form onSubmit={handleUpload} className="p-6 md:p-8 space-y-6">
+        {/* Sidebar: Upload Form */}
+        <div className="lg:col-span-4 space-y-6">
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+            <h2 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+              <Upload className="w-5 h-5 text-emerald-600" />
+              New Publication
+            </h2>
             
-            {/* Title Input */}
-            <div className="space-y-2">
-              <label htmlFor="title" className="block text-sm font-semibold text-slate-700">
-                Notice Title
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Type className="h-5 w-5 text-slate-400" />
-                </div>
+            <form onSubmit={handleUpload} className="space-y-5">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-500 uppercase">Notice Title</label>
                 <input
                   type="text"
-                  id="title"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g., Final Year BUMS Exam Schedule"
-                  disabled={isUploading}
-                  className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-xl focus:ring-2 focus:ring-primary focus:border-primary block p-3 pl-10 sm:text-sm transition-colors outline-none"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                  placeholder="e.g. BUMS Semester Results"
                   required
                 />
               </div>
-            </div>
 
-            {/* Publish Date Input */}
-            <div className="space-y-2">
-              <label htmlFor="publishDate" className="block text-sm font-semibold text-slate-700">
-                Publish Date
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Calendar className="h-5 w-5 text-slate-400" />
-                </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-500 uppercase">Publish Date</label>
                 <input
                   type="date"
-                  id="publishDate"
                   value={publishDate}
                   onChange={(e) => setPublishDate(e.target.value)}
-                  disabled={isUploading}
-                  className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-xl focus:ring-2 focus:ring-primary focus:border-primary block p-3 pl-10 sm:text-sm transition-colors outline-none appearance-none"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
                   required
                 />
               </div>
-            </div>
 
-            {/* PDF File Input */}
-            <div className="space-y-2">
-              <label className="block text-sm font-semibold text-slate-700">
-                Document File (PDF)
-              </label>
-              <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-300 border-dashed rounded-xl hover:border-primary/50 transition-colors bg-slate-50">
-                <div className="space-y-1 text-center">
-                  <div className="flex justify-center mb-4">
-                    {file ? (
-                      <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
-                        <CheckCircle2 className="w-8 h-8 text-blue-600" />
-                      </div>
-                    ) : (
-                      <div className="w-16 h-16 bg-white rounded-full border border-slate-200 shadow-sm flex items-center justify-center">
-                        <FileText className="w-8 h-8 text-slate-400" />
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="flex text-sm text-slate-600 justify-center">
-                    <label
-                      htmlFor="pdf-upload"
-                      className="relative cursor-pointer bg-white rounded-md font-semibold text-primary hover:text-primary-dark focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-primary px-2 py-1"
-                    >
-                      <span>{file ? 'Change file' : 'Upload PDF'}</span>
-                      <input 
-                        id="pdf-upload" 
-                        name="pdf-upload" 
-                        type="file" 
-                        accept="application/pdf"
-                        className="sr-only" 
-                        onChange={handleFileChange}
-                        disabled={isUploading}
-                      />
-                    </label>
-                    {!file && <p className="pl-1 py-1">or drag and drop</p>}
-                  </div>
-                  
-                  <p className="text-xs text-slate-500">
-                    {file ? file.name : 'PDF format up to 10MB'}
-                  </p>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-500 uppercase">Document (PDF)</label>
+                <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 bg-slate-50 text-center">
+                  <input
+                    type="file"
+                    id="pdf-upload"
+                    accept=".pdf"
+                    onChange={handleFileChange}
+                    className="hidden"
+                  />
+                  <label htmlFor="pdf-upload" className="cursor-pointer flex flex-col items-center">
+                    <FileText className={`w-8 h-8 mb-2 ${file ? 'text-emerald-600' : 'text-slate-400'}`} />
+                    <span className="text-xs font-medium text-slate-600">
+                      {file ? file.name : "Click to select PDF"}
+                    </span>
+                  </label>
                 </div>
               </div>
-            </div>
 
-            {/* Submit Button */}
-            <div className="pt-4 border-t border-slate-100">
               <button
                 type="submit"
-                disabled={isUploading || !file}
-                className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-xl shadow-md text-sm font-bold text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-70 disabled:cursor-not-allowed transition-all duration-300"
+                disabled={isUploading}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-emerald-200 flex items-center justify-center gap-2"
               >
-                {isUploading ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    Publishing Notice...
-                  </>
-                ) : (
-                  <>
-                    <Upload className="w-5 h-5" />
-                    Publish Notice
-                  </>
-                )}
+                {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                Publish Notice
               </button>
-            </div>
+            </form>
+          </div>
 
-          </form>
+          {message && (
+            <div className={`p-4 rounded-xl border flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2 ${
+              message.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'
+            }`}>
+              {message.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <ShieldAlert className="w-5 h-5" />}
+              <p className="text-sm font-medium">{message.text}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Content: List Management */}
+        <div className="lg:col-span-8 space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <h2 className="text-2xl font-extrabold text-slate-900">Manage Notices</h2>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search notices..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-full text-sm focus:ring-2 focus:ring-emerald-500 outline-none w-full sm:w-64"
+              />
+            </div>
+          </div>
+
+          {isLoading ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-20 flex flex-col items-center">
+              <Loader2 className="w-8 h-8 text-emerald-600 animate-spin mb-4" />
+              <p className="text-slate-500">Syncing with server...</p>
+            </div>
+          ) : filteredNotices.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-20 text-center">
+              <XCircle className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+              <p className="text-slate-500 font-medium">No notices found matching your criteria.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4">
+              {filteredNotices.map((notice) => (
+                <div key={notice.id} className={`bg-white rounded-2xl border p-5 transition-all shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 ${editingId === notice.id ? 'border-emerald-500 ring-1 ring-emerald-500' : 'border-slate-200 hover:border-emerald-200'}`}>
+                  <div className="flex-1 space-y-2">
+                    {editingId === notice.id ? (
+                      <div className="space-y-3">
+                        <input
+                          type="text"
+                          value={editTitle}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          className="w-full p-2 bg-slate-50 border rounded-lg text-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
+                        <input
+                          type="date"
+                          value={editDate}
+                          onChange={(e) => setEditDate(e.target.value)}
+                          className="w-full p-2 bg-slate-50 border rounded-lg text-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <h3 className="font-bold text-slate-900 leading-tight">{notice.title}</h3>
+                        <div className="flex items-center gap-4 text-xs font-semibold text-slate-500">
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            {new Date(notice.publish_date).toLocaleDateString()}
+                          </span>
+                          <a href={notice.pdf_url} target="_blank" className="text-emerald-600 flex items-center gap-1 hover:underline">
+                            <ExternalLink className="w-3 h-3" />
+                            View Document
+                          </a>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 border-t md:border-none pt-4 md:pt-0">
+                    {editingId === notice.id ? (
+                      <>
+                        <button
+                          onClick={() => handleUpdate(notice.id)}
+                          disabled={isSaving}
+                          className="flex-1 md:flex-none px-4 py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 transition-colors"
+                        >
+                          {isSaving ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "Save Changes"}
+                        </button>
+                        <button
+                          onClick={() => setEditingId(null)}
+                          className="flex-1 md:flex-none px-4 py-2 bg-slate-100 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-200 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => startEditing(notice)}
+                          className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                          title="Edit"
+                        >
+                          <Type className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(notice.id, notice.pdf_url)}
+                          className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </main>
     </div>
