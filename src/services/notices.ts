@@ -68,3 +68,61 @@ export async function createNotice(data: { title: string; pdf_url: string | null
     return { success: false, error: error.message || "An unexpected error occurred during creation" };
   }
 }
+
+export async function deleteNotice(id: string, pdfUrl: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    // 1. Delete row from Database
+    const { error: dbError } = await supabase
+      .from("notices")
+      .delete()
+      .eq("id", id);
+
+    if (dbError) {
+      throw dbError;
+    }
+
+    // 2. Extract file path/name from URL and delete from Storage
+    // Assumes URL format: .../storage/v1/object/public/notices/filename.pdf
+    const fileName = pdfUrl.split('/').pop();
+
+    if (fileName) {
+      const { error: storageError } = await supabase.storage
+        .from("notices")
+        .remove([fileName]);
+
+      if (storageError) {
+        console.error("Notice record deleted, but failed to remove file from storage:", storageError.message);
+      }
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("Unexpected error occurred while deleting notice:", error);
+    return { success: false, error: error.message || "An unexpected error occurred during deletion" };
+  }
+}
+
+export async function updateNotice(
+  id: string, 
+  data: { title?: string; publish_date?: string }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabase
+      .from("notices")
+      .update({
+        title: data.title,
+        publish_date: data.publish_date,
+      })
+      .eq("id", id);
+
+    if (error) {
+      console.error("Error updating notice in Supabase:", error.message);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("Unexpected error occurred while updating notice:", error);
+    return { success: false, error: error.message || "An unexpected error occurred during update" };
+  }
+}
