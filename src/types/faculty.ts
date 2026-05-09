@@ -5,5 +5,7 @@ export interface Faculty {
   department: string;
   qualification: string;
   image_url: string | null;
+  display_order: number;
+  featured: boolean;
   created_at: string;
 }
