@@ -1,15 +1,5 @@
 import { supabase } from "@/lib/supabase";
 
-export interface AdmissionInquiry {
-  id: string;
-  student_name: string;
-  email: string;
-  phone: string;
-  course: string;
-  message: string | null;
-  created_at: string;
-}
-
 export interface AdmissionInquiryInput {
   student_name: string;
   email: string;
@@ -18,7 +8,9 @@ export interface AdmissionInquiryInput {
   message?: string;
 }
 
-export async function submitAdmissionInquiry(data: AdmissionInquiryInput): Promise<{ success: boolean; error?: string }> {
+export async function submitAdmissionInquiry(
+  data: AdmissionInquiryInput
+): Promise<{ success: boolean; error?: string }> {
   try {
     const { error } = await supabase
       .from("admissions")
@@ -40,25 +32,9 @@ export async function submitAdmissionInquiry(data: AdmissionInquiryInput): Promi
     return { success: true };
   } catch (error: any) {
     console.error("Unexpected error occurred while submitting admission inquiry:", error);
-    return { success: false, error: error.message || "An unexpected error occurred during submission" };
-  }
-}
-
-export async function getAdmissionInquiries(): Promise<AdmissionInquiry[]> {
-  try {
-    const { data, error } = await supabase
-      .from("admissions")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      console.error("Error fetching admission inquiries from Supabase:", error.message);
-      return [];
-    }
-
-    return data as AdmissionInquiry[];
-  } catch (error) {
-    console.error("Unexpected error occurred while fetching admission inquiries:", error);
-    return [];
+    return { 
+      success: false, 
+      error: error?.message || "An unexpected error occurred during submission" 
+    };
   }
 }
