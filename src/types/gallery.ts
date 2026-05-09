@@ -3,5 +3,8 @@ export interface GalleryItem {
   title: string;
   image_url: string;
   category: string;
+  featured: boolean;
+  visible: boolean;
+  display_order: number;
   created_at: string;
 }
