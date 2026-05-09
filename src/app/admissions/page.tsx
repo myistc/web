@@ -1,4 +1,6 @@
-import { Metadata } from "next";
+"use client";
+
+import { useState } from "react";
 import { 
   ClipboardList, 
   CheckCircle2, 
@@ -11,15 +13,67 @@ import {
   Send,
   CalendarDays,
   Award,
-  AlertCircle
+  AlertCircle,
+  Loader2,
+  ShieldAlert
 } from "lucide-react";
-
-export const metadata: Metadata = {
-  title: "Admissions | Al-Shifa Unani Medical College",
-  description: "Information regarding the admission process, eligibility criteria, and required documents for the BUMS program at Al-Shifa Unani Medical College.",
-};
+import { submitAdmissionInquiry } from "@/services/admissions";
 
 export default function AdmissionsPage() {
+  const [formData, setFormData] = useState({
+    fullName: "",
+    email: "",
+    phone: "",
+    course: "",
+    message: ""
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [errorMessage, setErrorMessage] = useState("");
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    setFormData(prev => ({
+      ...prev,
+      [e.target.name]: e.target.value
+    }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setSubmitStatus('idle');
+    setErrorMessage("");
+
+    try {
+      const result = await submitAdmissionInquiry({
+        student_name: formData.fullName,
+        email: formData.email,
+        phone: formData.phone,
+        course: formData.course,
+        message: formData.message,
+      });
+
+      if (result.success) {
+        setSubmitStatus('success');
+        setFormData({
+          fullName: "",
+          email: "",
+          phone: "",
+          course: "",
+          message: ""
+        });
+      } else {
+        setSubmitStatus('error');
+        setErrorMessage(result.error || "An unexpected error occurred. Please try again.");
+      }
+    } catch (error) {
+      setSubmitStatus('error');
+      setErrorMessage("Network error. Please check your connection and try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="flex flex-col min-h-screen bg-slate-50">
       {/* 1. Hero / Banner Section */}
@@ -194,7 +248,27 @@ export default function AdmissionsPage() {
                   <p className="text-slate-500">Have questions? Fill out the form below and our counseling team will get back to you shortly.</p>
                 </div>
 
-                <form className="space-y-6">
+                {submitStatus === 'success' && (
+                  <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-start gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="text-sm font-bold text-emerald-900">Inquiry Submitted Successfully</h4>
+                      <p className="text-sm text-emerald-800 mt-1">Thank you for reaching out. Our admission counselors will contact you soon.</p>
+                    </div>
+                  </div>
+                )}
+
+                {submitStatus === 'error' && (
+                  <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3">
+                    <ShieldAlert className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="text-sm font-bold text-red-900">Submission Failed</h4>
+                      <p className="text-sm text-red-800 mt-1">{errorMessage}</p>
+                    </div>
+                  </div>
+                )}
+
+                <form className="space-y-6" onSubmit={handleSubmit}>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* Full Name */}
                     <div className="space-y-2">
@@ -207,9 +281,12 @@ export default function AdmissionsPage() {
                           type="text" 
                           id="fullName" 
                           name="fullName"
-                          className="pl-10 w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary block p-3 transition-colors" 
+                          value={formData.fullName}
+                          onChange={handleChange}
+                          className="pl-10 w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary block p-3 transition-colors outline-none" 
                           placeholder="John Doe"
                           required
+                          disabled={isSubmitting}
                         />
                       </div>
                     </div>
@@ -225,9 +302,12 @@ export default function AdmissionsPage() {
                           type="email" 
                           id="email" 
                           name="email"
-                          className="pl-10 w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary block p-3 transition-colors" 
+                          value={formData.email}
+                          onChange={handleChange}
+                          className="pl-10 w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary block p-3 transition-colors outline-none" 
                           placeholder="john@example.com"
                           required
+                          disabled={isSubmitting}
                         />
                       </div>
                     </div>
@@ -243,9 +323,12 @@ export default function AdmissionsPage() {
                           type="tel" 
                           id="phone" 
                           name="phone"
-                          className="pl-10 w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary block p-3 transition-colors" 
+                          value={formData.phone}
+                          onChange={handleChange}
+                          className="pl-10 w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary block p-3 transition-colors outline-none" 
                           placeholder="+91 98765 43210"
                           required
+                          disabled={isSubmitting}
                         />
                       </div>
                     </div>
@@ -260,9 +343,11 @@ export default function AdmissionsPage() {
                         <select 
                           id="course" 
                           name="course"
-                          className="pl-10 w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary block p-3 transition-colors appearance-none" 
+                          value={formData.course}
+                          onChange={handleChange}
+                          className="pl-10 w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary block p-3 transition-colors appearance-none outline-none" 
                           required
-                          defaultValue=""
+                          disabled={isSubmitting}
                         >
                           <option value="" disabled>Select a course</option>
                           <option value="bums">B.U.M.S. (Bachelor of Unani Medicine & Surgery)</option>
@@ -283,10 +368,13 @@ export default function AdmissionsPage() {
                       <textarea 
                         id="message" 
                         name="message"
+                        value={formData.message}
+                        onChange={handleChange}
                         rows={4}
-                        className="pl-10 w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary block p-3 transition-colors" 
+                        className="pl-10 w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary block p-3 transition-colors outline-none" 
                         placeholder="Write your query here..."
                         required
+                        disabled={isSubmitting}
                       ></textarea>
                     </div>
                   </div>
@@ -294,10 +382,20 @@ export default function AdmissionsPage() {
                   {/* Submit Button */}
                   <button 
                     type="submit" 
-                    className="w-full inline-flex justify-center items-center gap-2 bg-primary hover:bg-primary-dark text-white font-bold rounded-lg px-5 py-4 transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40"
+                    disabled={isSubmitting}
+                    className="w-full inline-flex justify-center items-center gap-2 bg-primary hover:bg-primary-dark text-white font-bold rounded-lg px-5 py-4 transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40 disabled:opacity-70 disabled:cursor-not-allowed"
                   >
-                    <Send className="w-5 h-5" />
-                    Submit Inquiry
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        Submitting...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-5 h-5" />
+                        Submit Inquiry
+                      </>
+                    )}
                   </button>
                   <p className="text-xs text-slate-500 text-center mt-4">
                     By submitting this form, you agree to our privacy policy and consent to being contacted by our admission counselors.
