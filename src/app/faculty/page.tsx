@@ -1,7 +1,7 @@
 import { Metadata } from "next";
 import Image from "next/image";
-import { getFaculty } from "@/services/faculty";
-import { Users, GraduationCap, BookOpen, User, ShieldCheck } from "lucide-react";
+import { getOrderedFaculty } from "@/services/faculty";
+import { Users, GraduationCap, BookOpen, User, ShieldCheck, Star } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "Our Faculty | Al-Shifa Unani Medical College",
@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 };
 
 export default async function FacultyPage() {
-  const facultyList = await getFaculty();
+  const facultyList = await getOrderedFaculty("manual");
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50">
@@ -49,9 +49,9 @@ export default async function FacultyPage() {
             /* Faculty Grid */
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
               {facultyList.map((faculty) => (
-                <div 
+                <article 
                   key={faculty.id} 
-                  className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100 hover:shadow-xl hover:border-primary/30 hover:-translate-y-1 transition-all duration-300 group flex flex-col"
+                  className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100 hover:shadow-xl hover:border-primary/30 hover:-translate-y-1 transition-all duration-300 group flex flex-col relative"
                 >
                   {/* Image Container */}
                   <div className="relative w-full aspect-[4/5] bg-slate-100 overflow-hidden border-b border-slate-100">
@@ -68,6 +68,17 @@ export default async function FacultyPage() {
                         <User className="w-20 h-20 text-slate-300" />
                       </div>
                     )}
+                    
+                    {/* Featured Badge */}
+                    {faculty.featured && (
+                      <div className="absolute top-4 right-4 z-20">
+                        <span className="bg-amber-400 text-amber-950 text-[10px] font-extrabold uppercase tracking-widest px-3 py-1.5 rounded-md shadow-md flex items-center gap-1.5">
+                          <Star className="w-3 h-3 fill-amber-950" />
+                          Featured
+                        </span>
+                      </div>
+                    )}
+
                     {/* Decorative Overlay Gradient */}
                     <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                   </div>
@@ -101,7 +112,7 @@ export default async function FacultyPage() {
                       </div>
                     </div>
                   </div>
-                </div>
+                </article>
               ))}
             </div>
           )}
